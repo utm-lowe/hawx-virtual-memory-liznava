@@ -67,7 +67,16 @@ vm_page_alloc(void)
   // table is structured, please see the "free_range" helper fucntion.
   // YOUR CODE HERE
 
-  return 0x00;
+  struct frame *f;
+  if(frame_table == 0)
+  {
+    return 0;
+  }
+  
+  f = frame_table;
+  frame_table = f->next;
+
+  return (void *)f;
 }
 
 
@@ -82,6 +91,10 @@ vm_page_free(void *pa)
   // table. The deallocated page should be come the first free frame
   // in the table.
   // YOUR CODE HERE
+  struct frame *A = (struct frame *)pa;
+
+  A->next = frame_table;
+  frame_table = A;
 }
 
 
@@ -97,7 +110,13 @@ vm_create_pagetable(void)
   //      marking every PTE as invalid.
   // If a page cannot be allocated, this function should return 0.
   // YOUR CODE HERE
+  pagetable = (pagetable_t)vm_page_alloc();
+  if(pagetable == 0)
+  {
+    return 0;
+  }
 
+  memset(pagetable, 0, PGSIZE);
   return pagetable;
 }
 
@@ -114,8 +133,16 @@ vm_lookup(pagetable_t pagetable, uint64 va)
   // HINT: This function is subtely different than the corresponding
   //       function in XV6. Take care when copying!
   // YOUR CODE HERE
+  pte_t *p;
 
-  return 0;
+  p = walk_pgtable(pagetable, va, 0);
+  if(p == 0)
+  {
+    return 0;
+  }
+
+  return PTE2PA(*p);
+
 }
 
 
@@ -136,8 +163,19 @@ vm_page_insert(pagetable_t pagetable, uint64 va, uint64 pa, int perm)
     //       Ask yourself, how can this function fail without
     //       panicking?
     // YOUR CODE HERE
+    pte_t *p;
 
-    return -1;
+    va = PGROUNDDOWN(va); 
+
+    p = walk_pgtable(pagetable, va, 1);
+    if(p == 0)
+    {
+      return -1;
+    }
+
+    *p = PA2PTE(pa) | perm | PTE_V;
+    return 0;
+
 }
 
 
@@ -153,6 +191,26 @@ vm_page_remove(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
   // do_free is set to 1, this function should deallocate the
   // corresponding physical page frame.
   // YOUR CODE HERE
+  pte_t *p;
+
+  uint64 pa;
+  for(uint64 i = va; i < va + npages * PGSIZE; i += PGSIZE)
+  {
+    p = walk_pgtable(pagetable, i, 0);
+
+    if(p == 0)
+    {
+      panic("Not found");
+    }
+
+    pa = PTE2PA(*p);
+    if(do_free == 1)
+    {
+      vm_page_free((void*)pa);
+    }
+
+    *p = 0;
+  }
 }
 
 
@@ -168,7 +226,41 @@ vm_map_range(pagetable_t pagetable, uint64 va, uint64 size, int perm)
     // We will allocate a new physical page frame for each page, and
     // then use vm_page_insert to add the page to the table.
     // YOUR CODE HERE
-    return -1;
+    uint64 begin, end, pa;
+
+    if(size == 0)
+    {
+      return 0;
+    }
+
+    end = PGROUNDDOWN(va + size - 1);
+    begin = PGROUNDDOWN(va);
+
+    for(;;)
+    {
+
+      pa = (uint64) vm_page_alloc();
+
+      if(pa == 0)
+      {
+        return -1;
+      }
+
+      if(vm_page_insert(pagetable, va, pa, perm) < 0)
+      {
+        vm_page_free((void *)pa);
+        return -1;
+      }
+
+      if(begin == end)
+      {
+        break;
+      }
+
+      begin += PGSIZE;
+    }
+
+    return 0;
 }
 
 
@@ -271,7 +363,34 @@ kernel_map_range(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int p
   // function is already set aside by the freerange for the use of the
   // kernel. This function will only be used at boot time.
   // YOUR CODE HERE
-  return -1;
+  pte_t *p;
+
+  uint64 s, end;
+  s = PGROUNDDOWN(va);
+  end = PGROUNDDOWN(va + size - 1);
+
+  for(;;)
+  {
+    p = walk_pgtable(pagetable, s, 1); 
+
+    if(p == 0)
+    {
+      return -1;
+    }
+
+    *p = PA2PTE(pa) | perm | PTE_V;
+
+    if(s == end)
+    {
+      break;
+    }
+
+    s += PGSIZE;
+    pa += PGSIZE;
+  }
+
+  return 0;
+  
 }
 
 
