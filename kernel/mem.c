@@ -261,6 +261,7 @@ vm_map_range(pagetable_t pagetable, uint64 va, uint64 size, int perm)
     }
 
     return 0;
+    
 }
 
 
@@ -390,7 +391,7 @@ kernel_map_range(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int p
   }
 
   return 0;
-  
+
 }
 
 
